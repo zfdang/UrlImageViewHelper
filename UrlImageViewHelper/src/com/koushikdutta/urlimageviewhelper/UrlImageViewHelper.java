@@ -22,6 +22,8 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapFactory.Options;
+import android.graphics.Matrix;
+import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
@@ -70,7 +72,27 @@ public final class UrlImageViewHelper {
         mResources = new Resources(mgr, mMetrics, context.getResources().getConfiguration());
     }
 
-    private static boolean mUseBitmapScaling = true;
+    private static boolean mUseZoomIn = true;
+    private static boolean mUseZoomOut = true;
+
+    /**
+     * Bitmap scaling will use smart/sane values to limit the maximum
+     * dimension of the bitmap during decode. This will prevent any dimension of the
+     * bitmap from being smaller than the dimensions of the device itself.
+     * @param useBitmapScaling Toggle for smart resizing.
+     */
+    public static void setUseZoomIn(boolean useZoomIn) {
+        mUseZoomIn = useZoomIn;
+    }
+    /**
+     * Bitmap scaling will use smart/sane values to limit the maximum
+     * dimension of the bitmap during decode. This will prevent any dimension of the
+     * bitmap from being smaller than the dimensions of the device itself.
+     */
+    public static boolean getUseZoomIn() {
+        return mUseZoomIn;
+    }
+
     /**
      * Bitmap scaling will use smart/sane values to limit the maximum
      * dimension of the bitmap during decode. This will prevent any dimension of the
@@ -78,8 +100,8 @@ public final class UrlImageViewHelper {
      * Doing this will conserve memory.
      * @param useBitmapScaling Toggle for smart resizing.
      */
-    public static void setUseBitmapScaling(boolean useBitmapScaling) {
-        mUseBitmapScaling = useBitmapScaling;
+    public static void setUseZoomOut(boolean useZoomOut) {
+        mUseZoomOut = useZoomOut;
     }
     /**
      * Bitmap scaling will use smart/sane values to limit the maximum
@@ -87,35 +109,69 @@ public final class UrlImageViewHelper {
      * bitmap from being larger than the dimensions of the device itself.
      * Doing this will conserve memory.
      */
-    public static boolean getUseBitmapScaling() {
-        return mUseBitmapScaling;
+    public static boolean getUseZoomOut() {
+        return mUseZoomOut;
     }
 
     private static Drawable loadDrawableFromStream(final Context context, final String url, final String filename, final int targetWidth, final int targetHeight) {
         prepareResources(context);
 
-//        Log.v(Constants.LOGTAG,targetWidth);
-//        Log.v(Constants.LOGTAG,targetHeight);
+        // clog(String.format("Target size: (%dx%d).", targetWidth, targetHeight));
         FileInputStream stream = null;
-        clog("Decoding: " + url + " " + filename);
+        // clog("Decoding: url=" + url + " filename=" + filename);
         try {
             BitmapFactory.Options o = null;
-            if (mUseBitmapScaling) {
+
+            Bitmap bitmap = null;
+            if (mUseZoomOut || mUseZoomIn) {
+                // decode image size (decode metadata only, not the whole image)
                 o = new BitmapFactory.Options();
                 o.inJustDecodeBounds = true;
                 stream = new FileInputStream(filename);
                 BitmapFactory.decodeStream(stream, null, o);
                 stream.close();
-                int scale = 0;
-                while ((o.outWidth >> scale) > targetWidth || (o.outHeight >> scale) > targetHeight) {
-                    scale++;
-                }
+
+                // get original image size
+                int inWidth =  o.outWidth;
+                int inHeight = o.outHeight;
+                // clog(String.format("Original bitmap size: (%dx%d).", inWidth, inHeight));
+
+                // get size for pre-resized image
                 o = new Options();
-                o.inSampleSize = 1 << scale;
+                o.inSampleSize = Math.max(inWidth/targetWidth, inHeight/targetHeight);
             }
+
+            // decode pre-resized image
             stream = new FileInputStream(filename);
-            final Bitmap bitmap = BitmapFactory.decodeStream(stream, null, o);
-            clog(String.format("Loaded bitmap (%dx%d).", bitmap.getWidth(), bitmap.getHeight()));
+            bitmap = BitmapFactory.decodeStream(stream, null, o);
+            stream.close();
+            // clog(String.format("Pre-sized bitmap size: (%dx%d).", bitmap.getWidth(), bitmap.getHeight()));
+
+            if (mUseZoomOut || mUseZoomIn) {
+                // create bitmap which matches exactly with the target size
+                float[] values = new float[9];
+                // calc exact destination size
+                // http://developer.android.com/reference/android/graphics/Matrix.ScaleToFit.html
+                Matrix m = new Matrix();
+                RectF inRect = new RectF(0, 0, bitmap.getWidth(), bitmap.getHeight());
+                RectF outRect = new RectF(0, 0, targetWidth, targetHeight);
+                m.setRectToRect(inRect, outRect, Matrix.ScaleToFit.CENTER);
+                m.getValues(values);
+
+                if( mUseZoomOut && (values[0] < 1.0 || values[4] < 1.0) ){
+                    bitmap = Bitmap.createScaledBitmap(bitmap, (int) (bitmap.getWidth() * values[0]),
+                        (int) (bitmap.getHeight() * values[4]), true);
+                    // clog(String.format("Zoom out: (%fx%f).", values[0], values[4]));
+                }
+
+                if( mUseZoomIn && (values[0] > 1.0 || values[4] > 1.0) ){
+                    bitmap = Bitmap.createScaledBitmap(bitmap, (int) (bitmap.getWidth() * values[0]),
+                            (int) (bitmap.getHeight() * values[4]), true);
+                    // clog(String.format("Zoom in: (%fx%f).", values[0], values[4]));
+                }
+            }
+
+            // clog(String.format("Final bitmap size: (%dx%d).", bitmap.getWidth(), bitmap.getHeight()));
             final BitmapDrawable bd = new BitmapDrawable(mResources, bitmap);
             return new ZombieDrawable(url, bd);
         } catch (final IOException e) {
