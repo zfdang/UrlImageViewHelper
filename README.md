@@ -1,6 +1,8 @@
 ## UrlImageViewHelper
 UrlImageViewHelper will fill an ImageView with an image that is found at a URL.
 
+this package was modified to be used in https://github.com/zfdang/asm-android-client-for-newsmth
+
 ### Original Project URL
 
 https://github.com/koush/UrlImageViewHelper
