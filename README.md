@@ -24,3 +24,23 @@ mUseZoomIn enables a better display result for small images
   original implementation: the scaled size is 512X384
   new implementation: the scaled size is 800X600
 ```
+
+#### 3. set error drawable for downloading failure
+
+```
+    // set error resource, this resource will be used when failed to load image
+    UrlImageViewHelper.setErrorResource(R.drawable.failure_night);
+```
+
+#### 4. set threshold for max image size to download
+
+
+```
+    // set threshold for max image size
+    UrlImageViewHelper.setMaxImageSize(50*1024);
+```
+
+#### 5. disable cache to avoid out-of-memory error
+
+see http://androidcocktail.blogspot.in/2012/05/solving-bitmap-size-exceeds-vm-budget.html
+
